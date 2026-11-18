@@ -1,0 +1,252 @@
+/*
+ * Warm "home notebook" palette with larger type and touch targets than Vant's defaults.
+ * Level colours (green / ochre / red / blue) are reserved for blood-pressure meaning; the
+ * accent and per-person colours deliberately avoid them.
+ */
+:root {
+  --bp-ink: #2b2421;
+  --bp-ink-2: #675b52;
+  --bp-ink-3: #776c65;
+  --bp-paper: #f6f2ec;
+  --bp-card: #fffdf9;
+  --bp-line: #e7dfd5;
+  --bp-line-strong: #c9bdb0;
+  --bp-press: #efe7dd;
+  --bp-accent: #c2531b;
+  --bp-accent-tint: #fbece3;
+
+  --bp-normal: #2b7a3b;
+  --bp-normal-bg: #e8f5ea;
+  --bp-elevated: #8a5a00;
+  --bp-elevated-bg: #fbf0d9;
+  --bp-high: #b42318;
+  --bp-high-bg: #fdecea;
+  --bp-low: #345a85;
+  --bp-low-bg: #e8eef6;
+
+  --bp-systolic: #c2410c;
+  --bp-diastolic: #3a5a99;
+  --bp-pulse: #2b7a3b;
+
+  --bp-radius: 16px;
+  --bp-shadow: 0 1px 2px rgba(60, 40, 20, 0.06), 0 6px 16px rgba(60, 40, 20, 0.06);
+  --bp-tabbar: 64px;
+
+  /* Overridden per page with the viewed person's colour. */
+  --person: var(--bp-accent);
+  --person-tint: var(--bp-accent-tint);
+
+  --van-primary-color: var(--bp-accent);
+  --van-danger-color: var(--bp-high);
+  --van-success-color: var(--bp-normal);
+  --van-warning-color: var(--bp-elevated);
+  --van-text-color: var(--bp-ink);
+  --van-text-color-2: var(--bp-ink-2);
+  --van-text-color-3: var(--bp-ink-3);
+  --van-field-placeholder-text-color: var(--bp-ink-3);
+  --van-background: var(--bp-paper);
+  --van-background-2: var(--bp-card);
+  --van-border-color: var(--bp-line);
+  --van-active-color: var(--bp-press);
+  --van-cell-background: var(--bp-card);
+  --van-cell-group-background: var(--bp-card);
+  --van-cell-group-inset-radius: var(--bp-radius);
+  --van-popup-background: var(--bp-card);
+  --van-dialog-background: var(--bp-card);
+  --van-action-sheet-item-background: var(--bp-card);
+  --van-tabbar-background: var(--bp-card);
+  --van-tabbar-item-text-color: var(--bp-ink-2);
+  --van-tabbar-item-active-color: var(--bp-accent);
+  --van-tabbar-item-active-background: var(--bp-card);
+  --van-nav-bar-background: var(--bp-paper);
+  --van-button-default-background: var(--bp-card);
+  --van-button-default-border-color: var(--bp-line-strong);
+  --van-switch-on-background: var(--bp-accent);
+
+  --van-font-size-xs: 15px;
+  --van-font-size-sm: 16px;
+  --van-font-size-md: 18px;
+  --van-font-size-lg: 20px;
+  --van-cell-font-size: 18px;
+  --van-cell-line-height: 28px;
+  --van-cell-vertical-padding: 14px;
+  --van-cell-label-font-size: 16px;
+  --van-cell-value-font-size: 17px;
+  --van-field-label-width: 5.2em;
+  --van-button-default-height: 48px;
+  --van-button-normal-font-size: 18px;
+  --van-button-large-height: 56px;
+  --van-button-large-font-size: 20px;
+  --van-button-small-height: 40px;
+  --van-button-small-font-size: 16px;
+  --van-tabbar-height: var(--bp-tabbar);
+  --van-tabbar-item-font-size: 16px;
+  --van-tabbar-item-icon-size: 26px;
+  --van-nav-bar-height: 54px;
+  --van-nav-bar-title-font-size: 20px;
+  --van-nav-bar-text-font-size: 18px;
+  --van-nav-bar-icon-color: var(--bp-ink);
+  --van-nav-bar-text-color: var(--bp-ink);
+  --van-tab-font-size: 18px;
+  --van-tab-text-color: var(--bp-ink-2);
+  --van-tab-active-text-color: var(--bp-ink);
+  --van-tabs-line-height: 52px;
+  --van-tabs-bottom-bar-color: var(--bp-accent);
+  --van-dialog-font-size: 20px;
+  --van-dialog-message-font-size: 18px;
+  --van-dialog-message-line-height: 28px;
+  --van-dialog-button-height: 56px;
+  --van-toast-font-size: 18px;
+  --van-toast-text-padding: 14px 18px;
+  --van-picker-option-font-size: 20px;
+  --van-picker-option-height: 48px;
+  --van-picker-action-font-size: 18px;
+  --van-picker-title-font-size: 18px;
+  --van-picker-confirm-action-color: var(--bp-accent);
+  --van-empty-description-font-size: 17px;
+  --van-switch-size: 30px;
+  --van-radio-checked-icon-color: var(--bp-accent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 18px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bp-paper);
+  color: var(--bp-ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: #f3d3bf;
+  color: var(--bp-ink);
+}
+
+input,
+textarea {
+  caret-color: var(--person);
+}
+
+:focus-visible {
+  outline: 3px solid var(--person);
+  outline-offset: 2px;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.page {
+  padding: 14px 16px calc(var(--bp-tabbar) + 28px + env(safe-area-inset-bottom));
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.page--plain {
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
+}
+
+.page-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.card {
+  background: var(--bp-card);
+  border-radius: var(--bp-radius);
+  box-shadow: var(--bp-shadow);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 28px 2px 12px;
+}
+
+.muted {
+  color: var(--bp-ink-2);
+  font-size: 16px;
+}
+
+.big-number {
+  font-size: 40px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Text fields drawn as visible boxes so they read as editable, not as static text. */
+.boxed .van-field__body {
+  border: 1.5px solid var(--bp-line-strong);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: #fff;
+}
+.boxed .van-field__body:focus-within {
+  border-color: var(--person);
+  box-shadow: 0 0 0 3px var(--person-tint);
+}
+.mark-after .van-field__label--required::before {
+  content: none;
+}
+.mark-after .van-field__label--required::after {
+  content: '*';
+  margin-left: 4px;
+  color: var(--bp-high);
+}
+
+/* Text-style button for low-emphasis or destructive actions placed away from primary ones. */
+.text-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 17px;
+  color: var(--bp-ink-2);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.text-btn.danger {
+  color: var(--bp-high);
+}
