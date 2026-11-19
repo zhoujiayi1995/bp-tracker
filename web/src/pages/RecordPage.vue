@@ -173,7 +173,7 @@ watch(
   white-space: nowrap;
 }
 .meds {
-  margin: -4px 2px 16px;
+  margin: -4px 2px 4px;
   font-size: 17px;
   line-height: 1.6;
   display: -webkit-box;

@@ -55,6 +55,8 @@ func run(logger *slog.Logger) error {
 		CookieSecure: cfg.CookieSecure,
 		Static:       dist,
 		Logger:       logger,
+		OCRPython:    cfg.OCRPython,
+		OCRDir:       cfg.OCRDir,
 	})
 	srv := &http.Server{
 		Addr:              cfg.Addr,
@@ -67,7 +69,8 @@ func run(logger *slog.Logger) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("listening", "addr", cfg.Addr, "db", cfg.DBPath, "tz", cfg.Location.String())
+		logger.Info("listening", "addr", cfg.Addr, "db", cfg.DBPath, "tz", cfg.Location.String(),
+			"ocr", cfg.OCRPython != "" && cfg.OCRDir != "")
 		errCh <- srv.ListenAndServe()
 	}()
 

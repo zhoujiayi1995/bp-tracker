@@ -26,15 +26,26 @@ export async function request<T>(method: Method, path: string, body?: unknown): 
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json'
   }
+  return send<T>(path, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+}
 
+// Leave Content-Type unset so the browser supplies the multipart boundary.
+export function requestForm<T>(path: string, form: FormData): Promise<T> {
+  return send<T>(path, {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'bp' },
+    body: form,
+  })
+}
+
+async function send<T>(path: string, init: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`/api${path}`, {
-      method,
-      headers,
-      credentials: 'same-origin',
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
+    res = await fetch(`/api${path}`, { ...init, credentials: 'same-origin' })
   } catch {
     throw new NetworkError()
   }

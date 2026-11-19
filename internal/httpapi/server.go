@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bptracker/internal/auth"
+	"bptracker/internal/ocr"
 )
 
 type Options struct {
@@ -19,6 +20,9 @@ type Options struct {
 	Static       fs.FS // nil disables frontend serving (tests)
 	Logger       *slog.Logger
 	Now          func() time.Time
+	OCRPython    string
+	OCRDir       string
+	OCRTimeout   time.Duration
 }
 
 type Server struct {
@@ -32,6 +36,11 @@ type Server struct {
 	sessions     *auth.Sessions
 	loginLimiter *auth.Limiter
 	joinLimiter  *auth.Limiter
+
+	ocrPython  string
+	ocrDir     string
+	ocrTimeout time.Duration
+	ocrSlot    chan struct{}
 }
 
 func New(o Options) *Server {
@@ -47,6 +56,10 @@ func New(o Options) *Server {
 	if loc == nil {
 		loc = time.Local
 	}
+	timeout := o.OCRTimeout
+	if timeout <= 0 {
+		timeout = ocr.DefaultTimeout
+	}
 	return &Server{
 		db:           o.DB,
 		loc:          loc,
@@ -58,6 +71,10 @@ func New(o Options) *Server {
 		loginLimiter: &auth.Limiter{MaxFailures: 5, Window: 15 * time.Minute, Lockout: 15 * time.Minute, Now: now},
 		// Invite codes are only 6 digits, so guessing must be throttled hard.
 		joinLimiter: &auth.Limiter{MaxFailures: 5, Window: time.Hour, Lockout: time.Hour, Now: now},
+		ocrPython:   o.OCRPython,
+		ocrDir:      o.OCRDir,
+		ocrTimeout:  timeout,
+		ocrSlot:     make(chan struct{}, 1),
 	}
 }
 
@@ -87,6 +104,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/readings/{id}", s.authed(s.getReading))
 	mux.HandleFunc("PUT /api/readings/{id}", s.authed(s.updateReading))
 	mux.HandleFunc("DELETE /api/readings/{id}", s.authed(s.deleteReading))
+	mux.HandleFunc("POST /api/ocr", s.authed(s.recognizePhoto))
 
 	mux.HandleFunc("/api/", s.handle(func(http.ResponseWriter, *http.Request) error {
 		return errNotFound

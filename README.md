@@ -6,13 +6,14 @@
 
 面向手机浏览器的家庭血压本。四个页签：记录、趋势、家人、我的。界面用大字号和大按钮，文案按年长者阅读习惯写。
 
-- **记录血压**：每次可连测 1–3 次，服务端取平均后保存，原始测量值一并保留。脉搏和备注选填。保存前按中国高血压分级给出一句话提示（偏低、正常、稍高、偏高；高压 ≥180 或低压 ≥110 时提示尽快就医）。偏离常见范围的数值会先弹窗确认。记录页同时显示今天有没有量过、测量要点，以及最近记录；有权限的人可以修改或删除。
+- **记录血压**：每次可连测 1–3 次，服务端取平均后保存，原始测量值一并保留。高压、低压、脉搏都必填，备注选填。保存前按中国高血压分级给出一句话提示（偏低、正常、稍高、偏高；高压 ≥180 或低压 ≥110 时提示尽快就医）。偏离常见范围的数值会先弹窗确认。记录页同时显示今天有没有量过、最近一次测量，以及最近记录；有权限的人可以修改或删除。
+- **拍照识别**：记录页可以拍摄欧姆龙 HEM-1026 的屏幕。识别出的高压、低压、脉搏先出现在核对框里，确认后才填入这一次测量。识别程序在仓库的 `ocr/` 目录，未配置时拍照识别不可用，仍可手填。
 - **趋势**：近 7、30、90 天。近 7 天默认「按时段」，更长范围默认「每天平均」。三种显示方式：
   - 「按时段」：一天分成上午（12:00 前）、下午（12:00–18:00）、晚上（18:00 起），各段取平均；
   - 「每天平均」：一天一个点；
   - 「每次测量」：每条记录一个点。
 
-  图上标出高压 140、低压 90 的参考线，可选择是否显示脉搏。页顶给出这段时间的平均血压，以及和前一段相比是升高、降低还是持平。病史和常用药在同一页展示，方便就诊时出示。
+  图上标出高压 140、低压 90 的参考线，脉搏始终显示。页顶给出这段时间的平均血压，以及和前一段相比是升高、降低还是持平。病史和常用药在同一页展示，方便就诊时出示。
 - **家人与权限**：
   - 本人的档案可读可写；
   - 用 6 位邀请码加入家庭后，成员之间可以互相查看，但只读；邀请码可重置，旧码立即失效；
@@ -34,8 +35,11 @@ internal/auth       users, sessions, login throttling
 internal/authz      single source of truth for read/write permissions
 internal/family     family groups and invite codes
 internal/profile    self / managed profiles
-internal/reading    readings, averaging, am/pm trend buckets
+internal/reading    readings, averaging, am/pm/evening trend buckets
+internal/ocr        runs `python -m bp_ocr` on one photo
 internal/httpapi    HTTP handlers, middleware, SPA serving
+ocr/                HEM-1026 screen reader, Python package `bp_ocr`
+ocr-test-photos/    real monitor photos used by the OCR acceptance tests
 web/                Vue 3 + Vant frontend (built into web/dist and embedded)
 ```
 
@@ -49,6 +53,7 @@ web/                Vue 3 + Vant frontend (built into web/dist and embedded)
   ```
 
 - Node.js 20 及以上，仅构建前端时需要。
+- Python 3.10 及以上，仅启用拍照识别时需要。识别依赖 OpenCV，安装在 `ocr/.venv`，不打进二进制。
 
 ## 本地开发
 
@@ -81,6 +86,18 @@ make build                 # builds the frontend, then bin/bp-tracker
 | `-db` | `BP_DB` | `./data/bp.db` | SQLite 文件路径，所在目录不存在时自动创建 |
 | `-tz` | `BP_TZ` | `Asia/Shanghai` | 划分上午/下午/晚上、按天统计时使用的时区 |
 | `-cookie-secure` | `BP_COOKIE_SECURE` | `false` | 在 HTTPS 后面部署时**必须开启** |
+| `-ocr-python` | `BP_OCR_PYTHON` | 空 | 拍照识别用的 Python，例如 `ocr/.venv/bin/python`。空则拍照识别不可用 |
+| `-ocr-dir` | `BP_OCR_DIR` | 空 | `bp_ocr` 包所在目录，作为识别子进程的工作目录，填 `ocr` |
+
+两项都设置后，记录页才能把欧姆龙 HEM-1026 的屏幕照片交给仓库里的 `ocr/`。照片只在识别时写入临时文件，进程结束即删除，不入库。Docker 镜像不含 Python，镜像内拍照识别不可用。
+
+```bash
+cd ocr
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+cd ..
+./bin/bp-tracker -ocr-python ocr/.venv/bin/python -ocr-dir ocr
+```
 
 ### Docker
 
@@ -139,6 +156,7 @@ make test        # = go test ./... && (cd web && npm run test)
 - Go 单元测试覆盖：权限矩阵、平均值计算与输入校验、上午/下午分桶、日期范围、会话续期、登录限流、家庭的加入与退出、档案的级联删除。
 - `internal/httpapi/api_test.go` 是基于 `httptest` 的端到端测试，覆盖：注册、建立和加入家庭、代管成员、录入记录、各种越权写入返回 403、退出家庭后失去访问权限、CSRF 防护、登录限流、改密码后其他设备下线。
 - 前端用 Vitest 测试血压分级、平均值、异常值判断和自动跳格逻辑。
+- 拍照识别的验收在 `ocr/` 下单独运行：`cd ocr && .venv/bin/python -m unittest discover -s tests -v`。实拍用例读取 `ocr-test-photos/`。
 
 ## 安全设计要点
 

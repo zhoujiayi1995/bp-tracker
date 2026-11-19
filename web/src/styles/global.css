@@ -108,6 +108,12 @@
   --van-radio-checked-icon-color: var(--bp-accent);
 }
 
+/* Vant's component CSS is injected after this file and resets :root tokens.
+   One extra selector keeps the inset group radius equal to .card. */
+html:root {
+  --van-cell-group-inset-radius: var(--bp-radius);
+}
+
 * {
   box-sizing: border-box;
 }

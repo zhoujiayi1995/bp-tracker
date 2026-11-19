@@ -14,6 +14,8 @@ type Config struct {
 	DBPath       string
 	Location     *time.Location
 	CookieSecure bool
+	OCRPython    string
+	OCRDir       string
 }
 
 func Load(args []string) (Config, error) {
@@ -22,6 +24,8 @@ func Load(args []string) (Config, error) {
 	dbPath := fs.String("db", envOr("BP_DB", "./data/bp.db"), "SQLite database file")
 	tz := fs.String("tz", envOr("BP_TZ", "Asia/Shanghai"), "time zone used to split days into am/pm")
 	secure := fs.Bool("cookie-secure", envBool("BP_COOKIE_SECURE", false), "mark session cookie Secure (enable behind HTTPS)")
+	ocrPython := fs.String("ocr-python", envOr("BP_OCR_PYTHON", ""), "python interpreter for bp-ocr; empty disables photo recognition")
+	ocrDir := fs.String("ocr-dir", envOr("BP_OCR_DIR", ""), "directory containing the bp_ocr package")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}
@@ -30,7 +34,14 @@ func Load(args []string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("load time zone %q: %w", *tz, err)
 	}
-	return Config{Addr: *addr, DBPath: *dbPath, Location: loc, CookieSecure: *secure}, nil
+	return Config{
+		Addr:         *addr,
+		DBPath:       *dbPath,
+		Location:     loc,
+		CookieSecure: *secure,
+		OCRPython:    *ocrPython,
+		OCRDir:       *ocrDir,
+	}, nil
 }
 
 func envOr(key, fallback string) string {

@@ -6,6 +6,7 @@ import type { Reading, Trend } from '../api/types'
 import PersonPicker from '../components/PersonPicker.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import BpChart from '../components/BpChart.vue'
+import HintPopover from '../components/HintPopover.vue'
 import LevelBadge from '../components/LevelBadge.vue'
 import ReadingList from '../components/ReadingList.vue'
 import { useToday } from '../composables/useToday'
@@ -181,14 +182,12 @@ watch([ampm, mode], loadRaw)
     <section class="card chart-card">
       <div v-if="hasData && chart" class="plot">
         <BpChart :data="chart" show-pulse :summary="insight.join('')" />
-        <van-popover v-model:show="guideOpen" placement="bottom-end" theme="light" :offset="[0, 4]">
-          <p class="guide-text">{{ t.trend.reference }}</p>
-          <template #reference>
-            <button type="button" class="guide" :aria-expanded="guideOpen" :aria-label="t.trend.reference">
-              <span aria-hidden="true">i</span>
-            </button>
-          </template>
-        </van-popover>
+        <HintPopover
+          v-model:open="guideOpen"
+          :title="t.trend.referenceTitle"
+          :items="t.trend.reference"
+          mark="i"
+        />
       </div>
       <van-loading v-else-if="loading || (mode === 'raw' && rawLoading)" class="empty" size="32px" vertical>{{ t.common.loading }}</van-loading>
       <van-empty v-else-if="chartError" image="error" :description="chartError">
@@ -268,39 +267,6 @@ watch([ampm, mode], loadRaw)
   top: -4px;
   right: -2px;
   z-index: 2;
-}
-.guide {
-  width: 44px;
-  height: 44px;
-  border: none;
-  background: transparent;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.guide span {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 1.5px solid var(--bp-line-strong);
-  background: var(--bp-card);
-  color: var(--bp-ink-2);
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.guide-text {
-  margin: 0;
-  max-width: 220px;
-  padding: 12px 14px;
-  font-size: 16px;
-  line-height: 1.55;
-  color: var(--bp-ink);
 }
 .modes {
   margin: 12px 4px 4px;

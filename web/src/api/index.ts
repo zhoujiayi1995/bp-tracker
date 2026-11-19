@@ -1,4 +1,5 @@
-import { request } from './client'
+import { request, requestForm } from './client'
+import type { OcrReading } from '../utils/ocr'
 import type {
   FamilyView,
   Me,
@@ -40,6 +41,12 @@ export const api = {
 
   trend: (profileId: number, mode: TrendMode, from: string, to: string) =>
     request<Trend>('GET', `/profiles/${profileId}/trend${query({ mode, from, to })}`),
+
+  recognizePhoto: (photo: Blob) => {
+    const form = new FormData()
+    form.append('photo', photo, 'photo.jpg')
+    return requestForm<OcrReading>('/ocr', form)
+  },
 }
 
 function query(params: Record<string, string | number | undefined>): string {

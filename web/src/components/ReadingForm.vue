@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
 import { api } from '../api'
+import { ApiError, NetworkError } from '../api/client'
 import type { Reading, ReadingInput, ReadingItem } from '../api/types'
 import ResultPanel from './ResultPanel.vue'
 import MeasureTips from './MeasureTips.vue'
@@ -9,6 +10,7 @@ import {
   averageItems,
   checkItem,
   emptyRow,
+  isEmptyRow,
   isUnusual,
   parseDigits,
   shouldAdvance,
@@ -16,6 +18,8 @@ import {
   type ItemDraft,
   type RowDraft,
 } from '../utils/bp'
+import { applyOcrToRow, ocrHasValue, ocrToRow } from '../utils/ocr'
+import { preparePhoto } from '../utils/photo'
 import { formatDateTime } from '../utils/date'
 import { useDraftsStore } from '../stores/drafts'
 import { describeError, describeItemProblem } from '../i18n/describeError'
@@ -56,6 +60,13 @@ const note = ref(props.initial?.note ?? stored?.note ?? '')
 const showNote = ref(Boolean(note.value))
 const saving = ref(false)
 const problem = ref<{ row: number; field: Field; message: string } | null>(null)
+const photoInput = ref<HTMLInputElement | null>(null)
+const recognizing = ref(false)
+const photoRow = ref(0)
+const reviewOpen = ref(false)
+const review = ref<RowDraft>(emptyRow())
+const reviewProblem = ref<{ field: Field; message: string } | null>(null)
+const reviewInputs: (HTMLInputElement | null)[] = []
 
 if (!isEdit) {
   watch(
@@ -81,6 +92,10 @@ const items = computed<ItemDraft[]>(() =>
 const average = computed(() => averageItems(items.value))
 const completeCount = computed(() => items.value.filter((it) => it.systolic !== null && it.diastolic !== null).length)
 const canAddRow = computed(() => rows.value.length < MAX_ROWS)
+const replacing = computed(() => {
+  const row = rows.value[photoRow.value]
+  return !!row && !isEmptyRow(row)
+})
 
 const saveText = computed(() => {
   if (isEdit) return t.record.saveEdit
@@ -200,6 +215,73 @@ function focusFirst() {
   first?.scrollIntoView({ block: 'center', behavior: 'smooth' })
 }
 
+function pickPhoto(row: number) {
+  if (recognizing.value) return
+  photoRow.value = row
+  photoInput.value?.click()
+}
+
+function setReviewRef(el: unknown, idx: number) {
+  reviewInputs[idx] = (el as HTMLInputElement | null) ?? null
+}
+
+function onReviewInput(field: Field, ev: Event) {
+  const el = ev.target as HTMLInputElement
+  const digits = el.value.replace(/\D/g, '').slice(0, 3)
+  el.value = digits
+  review.value[field] = digits
+  reviewProblem.value = null
+  if (!shouldAdvance(digits)) return
+  const next = reviewInputs[FIELDS.indexOf(field) + 1]
+  if (!next) {
+    el.blur()
+    return
+  }
+  if (next.value !== '') return
+  next.focus()
+}
+
+async function onPhoto(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || recognizing.value) return
+  recognizing.value = true
+  try {
+    const blob = await preparePhoto(file)
+    const result = await api.recognizePhoto(blob)
+    if (!ocrHasValue(result)) {
+      showToast(t.record.ocrNone)
+      return
+    }
+    review.value = ocrToRow(result)
+    reviewProblem.value = null
+    reviewOpen.value = true
+  } catch (err) {
+    showToast(err instanceof ApiError || err instanceof NetworkError ? describeError(err) : t.record.ocrPhoto)
+  } finally {
+    recognizing.value = false
+  }
+}
+
+function confirmReview() {
+  const reading = {
+    systolic: parseDigits(review.value.systolic),
+    diastolic: parseDigits(review.value.diastolic),
+    pulse: parseDigits(review.value.pulse),
+  }
+  const found = checkItem(reading)
+  if (found) {
+    reviewProblem.value = { field: found.field, message: describeItemProblem(0, found, 1) }
+    reviewInputs[FIELDS.indexOf(found.field)]?.focus()
+    return
+  }
+  rows.value = applyOcrToRow(rows.value, photoRow.value, reading)
+  problem.value = null
+  reviewOpen.value = false
+  emit('edit')
+}
+
 defineExpose({ focusFirst })
 
 async function save() {
@@ -269,7 +351,10 @@ function reset() {
 <template>
   <div class="reading-form">
     <div v-if="!isEdit" class="above">
-      <p class="last">{{ lastText }}</p>
+      <p class="last">
+        <span class="last-label">{{ t.record.lastLabel }}</span>
+        {{ lastText }}
+      </p>
       <MeasureTips />
     </div>
 
@@ -281,32 +366,45 @@ function reset() {
             <van-icon name="cross" aria-hidden="true" />
           </button>
         </div>
-        <div class="fields">
-          <label
-            v-for="f in FIELDS"
-            :key="f"
-            class="field"
-            :class="{ error: problem?.row === i && problem.field === f }"
+        <div class="fields-line">
+          <div class="fields">
+            <label
+              v-for="f in FIELDS"
+              :key="f"
+              class="field"
+              :class="{ error: problem?.row === i && problem.field === f }"
+            >
+              <span class="field-label" :style="{ color: fieldColor[f] }">{{ t.bp[f] }}</span>
+              <input
+                :ref="(el) => setInputRef(el, inputIndex(i, f))"
+                class="num"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                autocomplete="off"
+                maxlength="3"
+                :value="row[f]"
+                :aria-label="t.record.fieldLabel(rows.length > 1 ? i + 1 : null, t.bp[f])"
+                :aria-required="f !== 'pulse'"
+                :aria-invalid="problem?.row === i && problem.field === f"
+                :aria-describedby="problem?.row === i ? `${uid}-err-${i}` : undefined"
+                @focus="selectAll"
+                @input="onInput(i, f, $event)"
+              />
+              <span class="unit" aria-hidden="true">{{ f === 'pulse' ? t.bp.bpm : t.bp.mmHg }}</span>
+            </label>
+          </div>
+          <button
+            type="button"
+            class="camera"
+            :aria-label="t.record.fieldLabel(rows.length > 1 ? i + 1 : null, t.record.ocr)"
+            :aria-busy="recognizing && photoRow === i"
+            :disabled="recognizing"
+            @click="pickPhoto(i)"
           >
-            <span class="field-label" :style="{ color: fieldColor[f] }">{{ t.bp[f] }}</span>
-            <input
-              :ref="(el) => setInputRef(el, inputIndex(i, f))"
-              class="num"
-              type="text"
-              inputmode="numeric"
-              pattern="[0-9]*"
-              autocomplete="off"
-              maxlength="3"
-              :value="row[f]"
-              :aria-label="t.record.fieldLabel(rows.length > 1 ? i + 1 : null, t.bp[f])"
-              :aria-required="f !== 'pulse'"
-              :aria-invalid="problem?.row === i && problem.field === f"
-              :aria-describedby="problem?.row === i ? `${uid}-err-${i}` : undefined"
-              @focus="selectAll"
-              @input="onInput(i, f, $event)"
-            />
-            <span class="unit" aria-hidden="true">{{ f === 'pulse' ? t.bp.bpm : t.bp.mmHg }}</span>
-          </label>
+            <van-loading v-if="recognizing && photoRow === i" size="22" color="var(--person)" />
+            <van-icon v-else name="photograph" size="22" aria-hidden="true" />
+          </button>
         </div>
         <p v-if="problem?.row === i" :id="`${uid}-err-${i}`" class="row-error" role="alert">
           <van-icon name="warning-o" aria-hidden="true" />
@@ -318,6 +416,15 @@ function reset() {
         <span>{{ t.record.removed(undo.index + 1) }}</span>
         <button type="button" class="undo-btn" @click="undoRemove">{{ t.common.undo }}</button>
       </div>
+
+      <input
+        ref="photoInput"
+        class="photo-input"
+        type="file"
+        accept="image/*"
+        capture="environment"
+        @change="onPhoto"
+      />
 
       <button v-if="canAddRow" type="button" class="add" @click="addRow">
         <van-icon name="plus" aria-hidden="true" />
@@ -385,6 +492,42 @@ function reset() {
         {{ t.record.now }}
       </van-button>
     </van-popup>
+
+    <van-popup v-model:show="reviewOpen" round :close-on-click-overlay="false">
+      <div class="review">
+        <h2 class="review-title">{{ t.record.ocrTitle }}</h2>
+        <p v-if="replacing" class="review-hint">{{ t.record.ocrReplace }}</p>
+        <div class="fields">
+          <label v-for="f in FIELDS" :key="f" class="field" :class="{ error: reviewProblem?.field === f }">
+            <span class="field-label" :style="{ color: fieldColor[f] }">{{ t.bp[f] }}</span>
+            <input
+              :ref="(el) => setReviewRef(el, FIELDS.indexOf(f))"
+              class="num"
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              autocomplete="off"
+              maxlength="3"
+              :value="review[f]"
+              :aria-label="t.bp[f]"
+              :aria-required="f !== 'pulse'"
+              :aria-invalid="reviewProblem?.field === f"
+              @focus="selectAll"
+              @input="onReviewInput(f, $event)"
+            />
+            <span class="unit" aria-hidden="true">{{ f === 'pulse' ? t.bp.bpm : t.bp.mmHg }}</span>
+          </label>
+        </div>
+        <p v-if="reviewProblem" class="row-error" role="alert">
+          <van-icon name="warning-o" aria-hidden="true" />
+          {{ reviewProblem.message }}
+        </p>
+        <div class="review-actions">
+          <button type="button" class="plain" @click="reviewOpen = false">{{ t.common.cancel }}</button>
+          <button type="button" class="confirm" @click="confirmReview">{{ t.common.confirm }}</button>
+        </div>
+      </div>
+    </van-popup>
   </div>
 </template>
 
@@ -402,6 +545,16 @@ function reset() {
   margin: 0;
   font-size: 17px;
   color: var(--bp-ink-2);
+}
+.last-label {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--person-tint);
+  color: var(--person);
+  font-size: 15px;
+  font-weight: 600;
 }
 .entry {
   position: relative;
@@ -426,8 +579,8 @@ function reset() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border: 1.5px solid var(--bp-line-strong);
   border-radius: 50%;
@@ -436,12 +589,20 @@ function reset() {
   font: inherit;
   font-size: 18px;
 }
+.fields-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .fields {
+  flex: 1;
+  min-width: 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
 .field {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -453,12 +614,14 @@ function reset() {
   font-weight: 700;
 }
 .num {
+  box-sizing: border-box;
   width: 100%;
   height: 68px;
+  padding: 0;
   border: 2px solid var(--bp-line-strong);
   border-radius: 14px;
   text-align: center;
-  font-size: 34px;
+  font-size: min(34px, 32cqw);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--bp-ink);
@@ -528,6 +691,75 @@ function reset() {
 .add:active {
   background: var(--person-tint);
 }
+.camera {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1.5px solid var(--bp-line-strong);
+  border-radius: 50%;
+  background: var(--bp-card);
+  color: var(--person);
+}
+.camera:disabled {
+  opacity: 0.6;
+}
+.camera:active:not(:disabled) {
+  background: var(--person-tint);
+}
+.photo-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+.review {
+  width: min(420px, calc(100vw - 32px));
+  padding: 18px 16px 16px;
+  box-sizing: border-box;
+}
+.review-title {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+}
+.review-hint {
+  margin: -4px 0 12px;
+  font-size: 16px;
+  text-align: center;
+  color: var(--bp-ink-2);
+}
+.review-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.review-actions button {
+  flex: 1;
+  min-height: 48px;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+}
+.review-actions .plain {
+  border: 1.5px solid var(--bp-line-strong);
+  background: var(--bp-card);
+  color: var(--bp-ink);
+}
+.review-actions .confirm {
+  border: none;
+  background: var(--person);
+  color: #fff;
+}
 .extra {
   margin: 0 0 16px;
   box-shadow: var(--bp-shadow);
@@ -535,6 +767,7 @@ function reset() {
 .note-field :deep(.van-field__label) {
   width: 100%;
   margin-right: 0;
+  margin-bottom: 12px;
 }
 .note-head {
   display: flex;
