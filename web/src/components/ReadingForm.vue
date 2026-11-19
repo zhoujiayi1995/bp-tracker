@@ -33,8 +33,6 @@ const emit = defineEmits<{ saved: [reading: Reading]; edit: [] }>()
 const FIELDS: Field[] = ['systolic', 'diastolic', 'pulse']
 const MAX_ROWS = 3
 const UNDO_MS = 6000
-// A tremor double-tap right after auto-advance would otherwise drop a stray digit into the next box.
-const ADVANCE_GUARD_MS = 180
 
 const uid = useId()
 const drafts = useDraftsStore()
@@ -50,7 +48,7 @@ const toRow = (it: ReadingItem): RowDraft => ({
 const rows = ref<RowDraft[]>(
   props.initial ? props.initial.items.map(toRow) : stored ? stored.rows.map((r) => ({ ...r })) : [emptyRow()],
 )
-// null means "now": the server stamps the time when saving.
+// null means "now". Creates can use the server clock by omitting the timestamp.
 const customTime = ref<Date | null>(
   props.initial ? new Date(props.initial.measuredAt) : stored?.time ? new Date(stored.time) : null,
 )
@@ -99,7 +97,6 @@ const lastText = computed(() => {
 // Flat list of inputs in visual order, used to move focus as the user types.
 const inputs: (HTMLInputElement | null)[] = []
 const inputIndex = (row: number, field: Field) => row * FIELDS.length + FIELDS.indexOf(field)
-let guard = { idx: -1, until: 0 }
 
 function setInputRef(el: unknown, idx: number) {
   inputs[idx] = (el as HTMLInputElement | null) ?? null
@@ -108,11 +105,6 @@ function setInputRef(el: unknown, idx: number) {
 function onInput(row: number, field: Field, ev: Event) {
   const el = ev.target as HTMLInputElement
   const idx = inputIndex(row, field)
-  if (idx === guard.idx && performance.now() < guard.until) {
-    el.value = rows.value[row][field]
-    guard.idx = -1
-    return
-  }
   const digits = el.value.replace(/\D/g, '').slice(0, 3)
   el.value = digits
   rows.value[row][field] = digits
@@ -130,7 +122,6 @@ function advanceFrom(idx: number, el: HTMLInputElement) {
   // Never jump into a box that already has a value; the user is probably correcting this one.
   if (next.value !== '') return
   next.focus()
-  guard = { idx: idx + 1, until: performance.now() + ADVANCE_GUARD_MS }
 }
 
 function selectAll(ev: FocusEvent) {
@@ -241,7 +232,7 @@ async function save() {
   const input: ReadingInput = {
     items: items.value as ReadingItem[],
     note: note.value,
-    measuredAt: customTime.value?.toISOString(),
+    measuredAt: (customTime.value ?? (isEdit ? new Date() : undefined))?.toISOString(),
   }
   saving.value = true
   try {
@@ -308,7 +299,7 @@ function reset() {
               maxlength="3"
               :value="row[f]"
               :aria-label="t.record.fieldLabel(rows.length > 1 ? i + 1 : null, t.bp[f])"
-              :aria-required="f === 'pulse'"
+              :aria-required="f !== 'pulse'"
               :aria-invalid="problem?.row === i && problem.field === f"
               :aria-describedby="problem?.row === i ? `${uid}-err-${i}` : undefined"
               @focus="selectAll"

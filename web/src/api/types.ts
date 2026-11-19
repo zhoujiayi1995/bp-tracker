@@ -90,6 +90,10 @@ export interface TrendBucket {
   diastolic: number | null
   pulse: number | null
   count: number
+  systolicSum: number
+  diastolicSum: number
+  pulseSum: number
+  pulseCount: number
 }
 
 export interface TrendSummary {

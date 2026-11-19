@@ -53,7 +53,7 @@ describe('checkItem', () => {
       field: 'systolic',
       reason: 'not_above_diastolic',
     })
-    expect(checkItem({ systolic: 120, diastolic: 80, pulse: null })).toEqual({ field: 'pulse', reason: 'missing' })
+    expect(checkItem({ systolic: 120, diastolic: 80, pulse: null })).toBeNull()
     expect(checkItem({ systolic: 120, diastolic: 80, pulse: 70 })).toBeNull()
   })
 })

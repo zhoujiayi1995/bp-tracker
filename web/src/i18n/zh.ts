@@ -269,6 +269,7 @@ export const t = {
       medicalHistory: '病史',
       medications: '常用药',
       measuredAt: '测量时间',
+      offset: '记录起始位置',
       note: '备注',
       items: '测量次数',
       systolic: '高压',

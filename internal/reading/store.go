@@ -88,15 +88,27 @@ func Get(ctx context.Context, q db.Querier, id int64) (Reading, error) {
 	return r, nil
 }
 
-// List returns readings in [start, end), newest first, with their items. limit <= 0 means no limit.
-func List(ctx context.Context, q db.Querier, profileID int64, start, end time.Time, limit int) ([]Reading, error) {
+// List returns a page of readings with their items, newest first. Two zero times
+// select all dates, and a non-positive limit selects all matching rows.
+func List(ctx context.Context, q db.Querier, profileID int64, start, end time.Time, limit, offset int) ([]Reading, error) {
 	if limit <= 0 {
 		limit = -1 // SQLite: negative LIMIT means unbounded
 	}
-	rows, err := q.QueryContext(ctx, selectReadings+`
-		WHERE profile_id = ? AND measured_at >= ? AND measured_at < ?
-		ORDER BY measured_at DESC, id DESC
-		LIMIT ?`, profileID, start.Unix(), end.Unix(), limit)
+	filter := " WHERE profile_id = ?"
+	args := []any{profileID}
+	if !start.IsZero() || !end.IsZero() {
+		filter += " AND measured_at >= ? AND measured_at < ?"
+		args = append(args, start.Unix(), end.Unix())
+	}
+	args = append(args, limit, offset)
+
+	rows, err := q.QueryContext(ctx, `
+		WITH page AS (`+selectReadings+filter+`
+			ORDER BY measured_at DESC, id DESC LIMIT ? OFFSET ?)
+		SELECT p.id, p.profile_id, p.measured_at, p.systolic, p.diastolic, p.pulse, p.note, p.created_by,
+		       i.systolic, i.diastolic, i.pulse
+		FROM page p LEFT JOIN reading_items i ON i.reading_id = p.id
+		ORDER BY p.measured_at DESC, p.id DESC, i.seq`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list readings: %w", err)
 	}
@@ -106,33 +118,22 @@ func List(ctx context.Context, q db.Querier, profileID int64, start, end time.Ti
 	for rows.Next() {
 		var r Reading
 		var measuredAt int64
-		var pulse sql.NullInt64
-		if err := rows.Scan(&r.ID, &r.ProfileID, &measuredAt, &r.Systolic, &r.Diastolic, &pulse, &r.Note, &r.CreatedBy); err != nil {
+		var pulse, itemSys, itemDia, itemPulse sql.NullInt64
+		if err := rows.Scan(&r.ID, &r.ProfileID, &measuredAt, &r.Systolic, &r.Diastolic, &pulse, &r.Note, &r.CreatedBy,
+			&itemSys, &itemDia, &itemPulse); err != nil {
 			return nil, fmt.Errorf("scan reading: %w", err)
 		}
-		r.MeasuredAt = time.Unix(measuredAt, 0)
-		r.Pulse = intPtr(pulse)
-		out = append(out, r)
+		if len(out) == 0 || out[len(out)-1].ID != r.ID {
+			r.MeasuredAt = time.Unix(measuredAt, 0)
+			r.Pulse = intPtr(pulse)
+			out = append(out, r)
+		}
+		if itemSys.Valid {
+			last := &out[len(out)-1]
+			last.Items = append(last.Items, Item{Systolic: int(itemSys.Int64), Diastolic: int(itemDia.Int64), Pulse: intPtr(itemPulse)})
+		}
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if len(out) == 0 {
-		return out, nil
-	}
-
-	items, err := loadItems(ctx, q, `
-		WHERE reading_id IN (
-			SELECT id FROM readings
-			WHERE profile_id = ? AND measured_at >= ? AND measured_at < ?)`,
-		profileID, start.Unix(), end.Unix())
-	if err != nil {
-		return nil, err
-	}
-	for i := range out {
-		out[i].Items = items[out[i].ID]
-	}
-	return out, nil
+	return out, rows.Err()
 }
 
 func insertItems(ctx context.Context, q db.Querier, readingID int64, items []Item) error {

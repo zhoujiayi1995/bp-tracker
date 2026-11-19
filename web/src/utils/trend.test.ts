@@ -9,6 +9,10 @@ const bucket = (date: string, period: 'am' | 'pm' | 'evening', sys: number | nul
   diastolic: dia,
   pulse: null,
   count,
+  systolicSum: (sys ?? 0) * count,
+  diastolicSum: (dia ?? 0) * count,
+  pulseSum: 0,
+  pulseCount: 0,
 })
 
 const buckets: TrendBucket[] = [
@@ -24,13 +28,22 @@ const buckets: TrendBucket[] = [
 ]
 
 describe('dailyAverages', () => {
-  it('weights half-day averages by their reading count', () => {
+  it('combines period totals by reading count', () => {
     const days = dailyAverages(buckets)
     expect(days.map((d) => d.date)).toEqual(['2026-11-15', '2026-11-16', '2026-11-17'])
     expect(days[0]).toMatchObject({ systolic: null, count: 0 })
     expect(days[1]).toMatchObject({ systolic: 147, diastolic: 89, count: 3 })
     // 17th: am 146/88 once, evening 130/80 once -> 138/84
     expect(days[2]).toMatchObject({ systolic: 138, diastolic: 84, count: 2 })
+  })
+
+  it('rounds only once and counts only readings with a pulse', () => {
+    const date = '2026-11-17'
+    const [day] = dailyAverages([
+      { ...bucket(date, 'am', 140, 80, 2), systolicSum: 279, pulse: 60, pulseSum: 60, pulseCount: 1 },
+      { ...bucket(date, 'pm', 139, 80, 1), pulse: 80, pulseSum: 80, pulseCount: 1 },
+    ])
+    expect(day).toMatchObject({ systolic: 139, pulse: 70, count: 3 })
   })
 })
 

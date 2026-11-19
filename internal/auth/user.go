@@ -32,9 +32,10 @@ var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{3,32}$`)
 var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("timing-equalizer"), bcrypt.DefaultCost)
 
 type User struct {
-	ID       int64
-	Username string
-	FamilyID int64 // 0 when the user has not joined a family
+	ID           int64
+	Username     string
+	FamilyID     int64 // 0 when the user has not joined a family
+	passwordHash string
 }
 
 func (u User) Subject() authz.Subject {
@@ -90,7 +91,7 @@ func CreateUser(ctx context.Context, q db.Querier, username, password string, no
 	if err != nil {
 		return User{}, fmt.Errorf("user id: %w", err)
 	}
-	return User{ID: id, Username: username}, nil
+	return User{ID: id, Username: username, passwordHash: hash}, nil
 }
 
 // Authenticate checks the password. It returns ErrInvalidCredentials for both unknown
@@ -98,12 +99,11 @@ func CreateUser(ctx context.Context, q db.Querier, username, password string, no
 func Authenticate(ctx context.Context, q db.Querier, username, password string) (User, error) {
 	var (
 		u        User
-		hash     string
 		familyID sql.NullInt64
 	)
 	err := q.QueryRowContext(ctx,
 		`SELECT id, username, password_hash, family_id FROM users WHERE username = ?`, username).
-		Scan(&u.ID, &u.Username, &hash, &familyID)
+		Scan(&u.ID, &u.Username, &u.passwordHash, &familyID)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Spend the same bcrypt time as a real check so response timing does not reveal valid usernames.
 		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
@@ -112,7 +112,7 @@ func Authenticate(ctx context.Context, q db.Querier, username, password string) 
 	if err != nil {
 		return User{}, fmt.Errorf("load user: %w", err)
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+	if bcrypt.CompareHashAndPassword([]byte(u.passwordHash), []byte(password)) != nil {
 		return User{}, ErrInvalidCredentials
 	}
 	u.FamilyID = familyID.Int64

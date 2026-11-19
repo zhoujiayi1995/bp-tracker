@@ -5,6 +5,7 @@ import { showConfirmDialog, showSuccessToast, showToast } from 'vant'
 import { api } from '../api'
 import type { FamilyView, Profile, Reading } from '../api/types'
 import LevelBadge from '../components/LevelBadge.vue'
+import { useToday } from '../composables/useToday'
 import { useProfilesStore } from '../stores/profiles'
 import { useSessionStore } from '../stores/session'
 import { formatDay, formatTime, toYMD } from '../utils/date'
@@ -26,7 +27,8 @@ const codeDisplay = computed(() => {
   const c = view.value?.family?.inviteCode ?? ''
   return `${c.slice(0, 3)} ${c.slice(3)}`
 })
-const todayYMD = toYMD(new Date())
+const date = useToday()
+const todayYMD = computed(() => toYMD(date.value))
 
 async function load() {
   try {
@@ -60,11 +62,11 @@ function roleOf(p: Profile): string {
 const people = computed(() =>
   profiles.list.map((p) => {
     const r = latest.value[p.id] ?? null
-    const today = Boolean(r && toYMD(new Date(r.measuredAt)) === todayYMD)
+    const today = Boolean(r && toYMD(new Date(r.measuredAt)) === todayYMD.value)
     let when = t.family.noReading
     if (r) {
       const at = new Date(r.measuredAt)
-      when = today ? `${t.family.measuredToday} ${formatTime(at)}` : formatDay(at)
+      when = today ? `${t.family.measuredToday} ${formatTime(at)}` : formatDay(at, date.value)
     }
     return { profile: p, reading: r, today, when }
   }),

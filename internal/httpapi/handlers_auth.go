@@ -75,7 +75,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u auth.User, status int) error {
-	sess, err := s.sessions.Create(r.Context(), u.ID)
+	sess, err := s.sessions.Create(r.Context(), u)
 	if err != nil {
 		return err
 	}
@@ -120,7 +120,18 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, u auth.U
 	if ok, wait := s.loginLimiter.Allow(key); !ok {
 		return tooManyAttempts(wait.Seconds())
 	}
-	if err := auth.ChangePassword(r.Context(), s.db, u.ID, req.OldPassword, req.NewPassword); err != nil {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil {
+		return errUnauthorized
+	}
+	ctx := r.Context()
+	err = db.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		if err := auth.ChangePassword(ctx, tx, u.ID, req.OldPassword, req.NewPassword); err != nil {
+			return err
+		}
+		return auth.DeleteOtherSessions(ctx, tx, u.ID, c.Value)
+	})
+	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			s.loginLimiter.Fail(key)
 		}
@@ -128,12 +139,6 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, u auth.U
 	}
 	s.loginLimiter.Reset(key)
 
-	c, err := r.Cookie(sessionCookie)
-	if err == nil {
-		if err := s.sessions.DeleteOthers(r.Context(), u.ID, c.Value); err != nil {
-			return err
-		}
-	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

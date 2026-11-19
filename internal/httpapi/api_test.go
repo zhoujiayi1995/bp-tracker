@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,6 +33,12 @@ type response struct {
 
 func newTestServer(t *testing.T) string {
 	t.Helper()
+	base, _ := newTestServerWithDB(t)
+	return base
+}
+
+func newTestServerWithDB(t *testing.T) (string, *sql.DB) {
+	t.Helper()
 	d, err := db.Open(context.Background(), filepath.Join(t.TempDir(), "bp.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +48,7 @@ func newTestServer(t *testing.T) string {
 	srv := New(Options{DB: d, Location: loc, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
-	return ts.URL
+	return ts.URL, d
 }
 
 func newClient(t *testing.T, base string) *client {
@@ -274,4 +281,67 @@ func TestPasswordChangeSignsOutOtherDevices(t *testing.T) {
 	expect(t, phone.do("GET", "/me", nil), 200, "current device stays signed in")
 	expect(t, tablet.do("GET", "/me", nil), 401, "other device signed out")
 	expect(t, newClient(t, base).do("POST", "/auth/login", map[string]any{"username": "alice", "password": "secret2"}), 200, "login with new password")
+}
+
+func TestPasswordChangeRollsBackWhenSessionRevocationFails(t *testing.T) {
+	base, d := newTestServerWithDB(t)
+	phone, tablet := newClient(t, base), newClient(t, base)
+	expect(t, phone.do("POST", "/auth/register", map[string]any{
+		"username": "alice", "password": "secret1", "displayName": "Alice",
+	}), 201, "register")
+	expect(t, tablet.do("POST", "/auth/login", map[string]any{
+		"username": "alice", "password": "secret1",
+	}), 200, "sign in on tablet")
+	if _, err := d.Exec(`CREATE TRIGGER fail_revocation BEFORE DELETE ON sessions BEGIN
+		SELECT RAISE(ABORT, 'session storage failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+
+	expect(t, phone.do("PUT", "/me/password", map[string]any{
+		"oldPassword": "secret1", "newPassword": "secret2",
+	}), 500, "revocation fails")
+	expect(t, tablet.do("GET", "/me", nil), 200, "tablet session still valid")
+	expect(t, newClient(t, base).do("POST", "/auth/login", map[string]any{
+		"username": "alice", "password": "secret1",
+	}), 200, "old password still valid")
+}
+
+func TestReadingPaginationIncludesOlderRecords(t *testing.T) {
+	base, d := newTestServerWithDB(t)
+	c := newClient(t, base)
+	me := expect(t, c.do("POST", "/auth/register", map[string]any{
+		"username": "alice", "password": "secret1", "displayName": "Alice",
+	}), 201, "register")
+	pid := num(me.body["selfProfileId"])
+	userID := num(me.body["id"])
+	path := fmt.Sprintf("/profiles/%d/readings", pid)
+	at := time.Now().AddDate(0, 0, -60).Truncate(time.Second)
+	if _, err := d.Exec(`
+		WITH RECURSIVE series(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM series WHERE n < 1002)
+		INSERT INTO readings (profile_id, measured_at, systolic, diastolic, created_by, created_at)
+		SELECT ?, ?, 120, 80, ?, ? FROM series`, pid, at.Unix(), userID, at.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	created := expect(t, c.do("POST", path, map[string]any{
+		"measuredAt": at, "items": []map[string]any{{"systolic": 125, "diastolic": 82}},
+	}), 201, "save reading without pulse")
+	id := num(created.body["id"])
+	if created.body["pulse"] != nil {
+		t.Fatalf("omitted pulse = %v", created.body["pulse"])
+	}
+
+	latest := expect(t, c.do("GET", path+"?limit=1", nil), 200, "latest across dates")
+	if len(latest.list) != 1 || num(latest.list[0].(map[string]any)["id"]) != id ||
+		len(latest.list[0].(map[string]any)["items"].([]any)) != 1 {
+		t.Fatalf("latest list = %v", latest.list)
+	}
+	page := expect(t, c.do("GET", path+"?limit=30&offset=1000", nil), 200, "page beyond 1000")
+	if len(page.list) != 3 || num(page.list[0].(map[string]any)["id"]) != id-1000 {
+		t.Fatalf("page = %v", page.list)
+	}
+	after := at.AddDate(0, 0, 2).Format("2006-01-02")
+	filtered := expect(t, c.do("GET", path+"?from="+after+"&limit=1", nil), 200, "respect date filter")
+	if len(filtered.list) != 0 {
+		t.Fatalf("dated list = %v", filtered.list)
+	}
 }

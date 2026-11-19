@@ -112,9 +112,13 @@ func (s *Server) listReadings(w http.ResponseWriter, r *http.Request, u auth.Use
 		return err
 	}
 	q := r.URL.Query()
-	rng, err := reading.ParseDayRange(q.Get("from"), q.Get("to"), s.loc, s.now(), defaultRangeDays, maxRangeDays)
-	if err != nil {
-		return err
+	var start, end time.Time
+	if from, to := q.Get("from"), q.Get("to"); from != "" || to != "" {
+		rng, err := reading.ParseDayRange(from, to, s.loc, s.now(), defaultRangeDays, maxRangeDays)
+		if err != nil {
+			return err
+		}
+		start, end = rng.Bounds()
 	}
 	limit := defaultListLimit
 	if v := q.Get("limit"); v != "" {
@@ -125,8 +129,15 @@ func (s *Server) listReadings(w http.ResponseWriter, r *http.Request, u auth.Use
 		limit = n
 	}
 
-	start, end := rng.Bounds()
-	list, err := reading.List(r.Context(), s.db, p.ID, start, end, limit)
+	offset := 0
+	if v := q.Get("offset"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return validate.Field("offset", "range")
+		}
+		offset = n
+	}
+	list, err := reading.List(r.Context(), s.db, p.ID, start, end, limit, offset)
 	if err != nil {
 		return err
 	}
@@ -146,12 +157,16 @@ type pointDTO struct {
 }
 
 type bucketDTO struct {
-	Date      string `json:"date"`
-	Period    string `json:"period"`
-	Systolic  *int   `json:"systolic"`
-	Diastolic *int   `json:"diastolic"`
-	Pulse     *int   `json:"pulse"`
-	Count     int    `json:"count"`
+	Date         string `json:"date"`
+	Period       string `json:"period"`
+	Systolic     *int   `json:"systolic"`
+	Diastolic    *int   `json:"diastolic"`
+	Pulse        *int   `json:"pulse"`
+	Count        int    `json:"count"`
+	SystolicSum  int    `json:"systolicSum"`
+	DiastolicSum int    `json:"diastolicSum"`
+	PulseSum     int    `json:"pulseSum"`
+	PulseCount   int    `json:"pulseCount"`
 }
 
 type summaryDTO struct {
@@ -189,7 +204,7 @@ func (s *Server) trend(w http.ResponseWriter, r *http.Request, u auth.User) erro
 	}
 
 	start, end := rng.Bounds()
-	list, err := reading.List(r.Context(), s.db, p.ID, start, end, 0)
+	list, err := reading.List(r.Context(), s.db, p.ID, start, end, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -210,6 +225,7 @@ func (s *Server) trend(w http.ResponseWriter, r *http.Request, u auth.User) erro
 		for _, b := range reading.PeriodBuckets(list, rng) {
 			resp.Buckets = append(resp.Buckets, bucketDTO{
 				Date: b.Date, Period: string(b.Period), Systolic: b.Systolic, Diastolic: b.Diastolic, Pulse: b.Pulse, Count: b.Count,
+				SystolicSum: b.SystolicSum, DiastolicSum: b.DiastolicSum, PulseSum: b.PulseSum, PulseCount: b.PulseCount,
 			})
 		}
 	}

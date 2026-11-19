@@ -63,7 +63,7 @@ func TestValidateItems(t *testing.T) {
 		{"diastolic low", []Item{{120, 29, nil}}, "items[0].diastolic"},
 		{"diastolic high", []Item{{200, 161, nil}}, "items[0].diastolic"},
 		{"systolic not above diastolic", []Item{{120, 80, ip(70)}, {90, 90, ip(70)}}, "items[1].systolic"},
-		{"pulse required", []Item{{120, 80, nil}}, "items[0].pulse"},
+		{"pulse omitted", []Item{{120, 80, nil}}, ""},
 		{"pulse range", []Item{{120, 80, ip(201)}}, "items[0].pulse"},
 	}
 	for _, tc := range cases {
@@ -249,7 +249,7 @@ func TestStoreRoundTrip(t *testing.T) {
 	if _, err := Insert(ctx, d, pid, uid, Input{MeasuredAt: now.AddDate(0, 0, -40), Items: []Item{{120, 80, nil}}}, now); err != nil {
 		t.Fatal(err)
 	}
-	list, err := List(ctx, d, pid, now.AddDate(0, 0, -7), now.AddDate(0, 0, 1), 0)
+	list, err := List(ctx, d, pid, now.AddDate(0, 0, -7), now.AddDate(0, 0, 1), 0, 0)
 	if err != nil || len(list) != 1 || list[0].ID != id || len(list[0].Items) != 1 {
 		t.Fatalf("List = %+v, %v", list, err)
 	}

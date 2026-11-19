@@ -84,6 +84,22 @@ func TestChangePassword(t *testing.T) {
 	}
 }
 
+func TestSessionCreationRequiresCurrentPassword(t *testing.T) {
+	ctx := context.Background()
+	d := openDB(t)
+	u, err := CreateUser(ctx, d, "alice", "secret1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ChangePassword(ctx, d, u.ID, "secret1", "secret2"); err != nil {
+		t.Fatal(err)
+	}
+	sessions := &Sessions{DB: d}
+	if _, err := sessions.Create(ctx, u); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("creating a session after changing credentials: err = %v", err)
+	}
+}
+
 func TestSessionLifecycle(t *testing.T) {
 	ctx := context.Background()
 	d := openDB(t)
@@ -95,7 +111,7 @@ func TestSessionLifecycle(t *testing.T) {
 	clock := time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)
 	s := &Sessions{DB: d, Now: func() time.Time { return clock }}
 
-	sess, err := s.Create(ctx, u.ID)
+	sess, err := s.Create(ctx, u)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +132,7 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Fatalf("expired lookup err = %v", err)
 	}
 
-	sess2, _ := s.Create(ctx, u.ID)
+	sess2, _ := s.Create(ctx, u)
 	if err := s.Delete(ctx, sess2.Token); err != nil {
 		t.Fatal(err)
 	}
@@ -130,10 +146,10 @@ func TestDeleteOthersKeepsCurrent(t *testing.T) {
 	d := openDB(t)
 	u, _ := CreateUser(ctx, d, "alice", "secret1", time.Now())
 	s := &Sessions{DB: d}
-	keep, _ := s.Create(ctx, u.ID)
-	drop, _ := s.Create(ctx, u.ID)
+	keep, _ := s.Create(ctx, u)
+	drop, _ := s.Create(ctx, u)
 
-	if err := s.DeleteOthers(ctx, u.ID, keep.Token); err != nil {
+	if err := DeleteOtherSessions(ctx, d, u.ID, keep.Token); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, _, err := s.Lookup(ctx, keep.Token); err != nil {

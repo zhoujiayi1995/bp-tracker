@@ -30,7 +30,7 @@ export const api = {
   updateProfile: (id: number, input: ProfileInput) => request<Profile>('PUT', `/profiles/${id}`, input),
   deleteProfile: (id: number) => request<void>('DELETE', `/profiles/${id}`),
 
-  readings: (profileId: number, params: { from?: string; to?: string; limit?: number } = {}) =>
+  readings: (profileId: number, params: { from?: string; to?: string; limit?: number; offset?: number } = {}) =>
     request<Reading[]>('GET', `/profiles/${profileId}/readings${query(params)}`),
   reading: (id: number) => request<Reading>('GET', `/readings/${id}`),
   createReading: (profileId: number, input: ReadingInput) =>

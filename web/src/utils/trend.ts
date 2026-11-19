@@ -32,16 +32,12 @@ export type ChartData =
 
 type Metric = 'systolic' | 'diastolic' | 'pulse'
 
-// Buckets carry per-bucket averages; weighting by count approximates the average of all readings.
 function weighted(buckets: TrendBucket[], key: Metric): number | null {
   let sum = 0
   let n = 0
   for (const b of buckets) {
-    const v = b[key]
-    if (v !== null && b.count > 0) {
-      sum += v * b.count
-      n += b.count
-    }
+    sum += b[`${key}Sum`]
+    n += key === 'pulse' ? b.pulseCount : b.count
   }
   return n ? Math.round(sum / n) : null
 }

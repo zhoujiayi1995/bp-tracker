@@ -75,11 +75,13 @@ async function logout() {
   }
   try {
     await session.logout()
-  } finally {
-    profiles.reset()
-    drafts.reset()
-    router.replace('/login')
+  } catch (err) {
+    showToast(describeError(err))
+    return
   }
+  profiles.reset()
+  drafts.reset()
+  router.replace('/login')
 }
 </script>
 

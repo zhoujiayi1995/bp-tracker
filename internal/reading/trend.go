@@ -102,12 +102,16 @@ func RawPoints(readings []Reading) []Point {
 // Bucket is the average of every reading in one period of a day. Values are nil when
 // that period has no readings, so charts can show a gap instead of a misleading line.
 type Bucket struct {
-	Date      string
-	Period    Period
-	Systolic  *int
-	Diastolic *int
-	Pulse     *int
-	Count     int
+	Date         string
+	Period       Period
+	Systolic     *int
+	Diastolic    *int
+	Pulse        *int
+	Count        int
+	SystolicSum  int
+	DiastolicSum int
+	PulseSum     int
+	PulseCount   int
 }
 
 // PeriodBuckets emits one bucket per period (morning, afternoon, evening) for every
@@ -142,6 +146,8 @@ func PeriodBuckets(readings []Reading, r DayRange) []Bucket {
 			if a := sums[key(date, p)]; a != nil {
 				sys, dia := roundDiv(a.sys, a.n), roundDiv(a.dia, a.n)
 				b.Systolic, b.Diastolic, b.Count = &sys, &dia, a.n
+				b.SystolicSum, b.DiastolicSum = a.sys, a.dia
+				b.PulseSum, b.PulseCount = a.pulse, a.pulseN
 				if a.pulseN > 0 {
 					pulse := roundDiv(a.pulse, a.pulseN)
 					b.Pulse = &pulse

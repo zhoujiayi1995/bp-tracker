@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"bptracker/internal/db"
 )
 
 const (
@@ -40,7 +42,7 @@ func (s *Sessions) now() time.Time {
 
 // Create issues a new random token. Only its SHA-256 is stored, so a leaked database
 // does not expose usable session tokens.
-func (s *Sessions) Create(ctx context.Context, userID int64) (Session, error) {
+func (s *Sessions) Create(ctx context.Context, u User) (Session, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return Session{}, fmt.Errorf("generate token: %w", err)
@@ -50,13 +52,23 @@ func (s *Sessions) Create(ctx context.Context, userID int64) (Session, error) {
 	expires := now.Add(SessionTTL)
 
 	if _, err := s.DB.ExecContext(ctx,
-		`DELETE FROM sessions WHERE user_id = ? AND expires_at <= ?`, userID, now.Unix()); err != nil {
+		`DELETE FROM sessions WHERE user_id = ? AND expires_at <= ?`, u.ID, now.Unix()); err != nil {
 		return Session{}, fmt.Errorf("prune sessions: %w", err)
 	}
-	if _, err := s.DB.ExecContext(ctx,
-		`INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)`,
-		hashToken(token), userID, expires.Unix(), now.Unix()); err != nil {
+	// A login verified before a concurrent password change must not issue a new session afterward.
+	result, err := s.DB.ExecContext(ctx, `
+		INSERT INTO sessions (token_hash, user_id, expires_at, created_at)
+		SELECT ?, id, ?, ? FROM users WHERE id = ? AND password_hash = ?`,
+		hashToken(token), expires.Unix(), now.Unix(), u.ID, u.passwordHash)
+	if err != nil {
 		return Session{}, fmt.Errorf("insert session: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return Session{}, fmt.Errorf("insert session rows: %w", err)
+	}
+	if n == 0 {
+		return Session{}, ErrInvalidCredentials
 	}
 	return Session{Token: token, ExpiresAt: expires}, nil
 }
@@ -106,9 +118,9 @@ func (s *Sessions) Delete(ctx context.Context, token string) error {
 	return err
 }
 
-// DeleteOthers signs the user out everywhere except the current device.
-func (s *Sessions) DeleteOthers(ctx context.Context, userID int64, keepToken string) error {
-	_, err := s.DB.ExecContext(ctx,
+// DeleteOtherSessions signs the user out everywhere except the current device.
+func DeleteOtherSessions(ctx context.Context, q db.Querier, userID int64, keepToken string) error {
+	_, err := q.ExecContext(ctx,
 		`DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?`, userID, hashToken(keepToken))
 	return err
 }

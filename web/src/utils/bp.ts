@@ -70,8 +70,7 @@ export function checkItem(it: ItemDraft): ItemProblem | null {
   const diastolic = it.diastolic
   if (systolic < LIMITS.systolic.min || systolic > LIMITS.systolic.max) return { field: 'systolic', reason: 'range' }
   if (diastolic < LIMITS.diastolic.min || diastolic > LIMITS.diastolic.max) return { field: 'diastolic', reason: 'range' }
-  if (it.pulse === null) return { field: 'pulse', reason: 'missing' }
-  if (it.pulse < LIMITS.pulse.min || it.pulse > LIMITS.pulse.max) return { field: 'pulse', reason: 'range' }
+  if (it.pulse !== null && (it.pulse < LIMITS.pulse.min || it.pulse > LIMITS.pulse.max)) return { field: 'pulse', reason: 'range' }
   if (it.systolic <= it.diastolic) return { field: 'systolic', reason: 'not_above_diastolic' }
   return null
 }

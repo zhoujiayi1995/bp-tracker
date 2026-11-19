@@ -30,11 +30,8 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function logout() {
-    try {
-      await api.logout()
-    } finally {
-      clear()
-    }
+    await api.logout()
+    clear()
   }
 
   function clear() {

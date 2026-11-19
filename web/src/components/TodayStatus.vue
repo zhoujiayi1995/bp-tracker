@@ -6,9 +6,7 @@ import { formatTime } from '../utils/date'
 import { PERIODS, periodLabel } from '../utils/period'
 import { t } from '../i18n/zh'
 
-const props = defineProps<{ readings: Reading[] }>()
-
-const now = new Date()
+const props = defineProps<{ date: Date; readings: Reading[] }>()
 
 // Readings arrive newest first, so the first match is the latest of that period.
 const slots = computed(() =>
@@ -23,9 +21,9 @@ const slots = computed(() =>
 <template>
   <section class="today">
     <div class="calendar">
-      <span class="month">{{ t.today.month(now.getMonth() + 1) }}</span>
-      <span class="day">{{ now.getDate() }}</span>
-      <span class="weekday">{{ t.fmt.weekdays[now.getDay()] }}</span>
+      <span class="month">{{ t.today.month(date.getMonth() + 1) }}</span>
+      <span class="day">{{ date.getDate() }}</span>
+      <span class="weekday">{{ t.fmt.weekdays[date.getDay()] }}</span>
     </div>
     <ul class="slots">
       <li v-for="s in slots" :key="s.period" class="slot" :class="{ done: s.reading }">

@@ -9,6 +9,7 @@ import TodayStatus from '../components/TodayStatus.vue'
 import ReadingForm from '../components/ReadingForm.vue'
 import ResultPanel from '../components/ResultPanel.vue'
 import ReadingList from '../components/ReadingList.vue'
+import { useToday } from '../composables/useToday'
 import { useProfilesStore } from '../stores/profiles'
 import { adviceFor } from '../utils/bp'
 import { toYMD } from '../utils/date'
@@ -21,6 +22,7 @@ const RECENT_LIMIT = 5
 const router = useRouter()
 const profiles = useProfilesStore()
 const current = computed(() => profiles.current)
+const today = useToday()
 
 const recent = ref<Reading[]>([])
 const todayReadings = ref<Reading[]>([])
@@ -47,13 +49,13 @@ let requestSeq = 0
 
 async function load() {
   const p = current.value
-  if (!p) return
   const seq = ++requestSeq
-  const today = toYMD(new Date())
+  if (!p) return
+  const date = toYMD(today.value)
   try {
     const [rec, tod] = await Promise.all([
       api.readings(p.id, { limit: RECENT_LIMIT }),
-      api.readings(p.id, { from: today, to: today }),
+      api.readings(p.id, { from: date, to: date }),
     ])
     if (seq !== requestSeq) return
     recent.value = rec
@@ -84,7 +86,7 @@ watch(
   { immediate: true },
 )
 watch(
-  () => current.value?.id,
+  [() => current.value?.id, today],
   () => {
     lastSaved.value = null
     recent.value = []
@@ -106,7 +108,7 @@ watch(
       </p>
     </header>
 
-    <TodayStatus :readings="todayReadings" />
+    <TodayStatus :date="today" :readings="todayReadings" />
 
     <p v-if="current.medications" class="meds">
       <span class="meds-label">{{ t.today.medications }}</span>

@@ -8,6 +8,7 @@ import SegmentedControl from '../components/SegmentedControl.vue'
 import BpChart from '../components/BpChart.vue'
 import LevelBadge from '../components/LevelBadge.vue'
 import ReadingList from '../components/ReadingList.vue'
+import { useToday } from '../composables/useToday'
 import { useProfilesStore } from '../stores/profiles'
 import { lastDays } from '../utils/date'
 import { personStyle } from '../utils/person'
@@ -20,6 +21,7 @@ const PREFS_KEY = 'bp.trendPrefs.v2'
 
 const profiles = useProfilesStore()
 const current = computed(() => profiles.current)
+const today = useToday()
 
 type Days = 7 | 30 | 90
 const saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<{ days: Days }>
@@ -27,7 +29,6 @@ const days = ref<Days>(saved.days ?? 7)
 const defaultMode = (d: Days): ChartMode => (d === 7 ? 'ampm' : 'daily')
 const mode = ref<ChartMode>(defaultMode(days.value))
 const guideOpen = ref(false)
-const listLimit = ref(PAGE_SIZE)
 
 const rangeOptions: { value: Days; label: string }[] = [
   { value: 7, label: t.trend.days7 },
@@ -45,13 +46,22 @@ const previous = ref<Trend | null>(null)
 const raw = ref<Trend | null>(null)
 const readings = ref<Reading[]>([])
 const loading = ref(false)
+const loadError = ref('')
+const rawLoading = ref(false)
+const rawError = ref('')
+const loadingMore = ref(false)
+const hasMore = ref(false)
 
 const summary = computed(() => ampm.value?.summary ?? null)
 const hasData = computed(() => (summary.value?.count ?? 0) > 0)
 const insight = computed(() =>
   ampm.value ? describeTrend(days.value, ampm.value.summary, previous.value?.summary ?? null, ampm.value.buckets ?? []) : [],
 )
-const chart = computed(() => (ampm.value ? chartData(mode.value, ampm.value, raw.value) : null))
+const chart = computed(() => {
+  if (!ampm.value || (mode.value === 'raw' && !raw.value)) return null
+  return chartData(mode.value, ampm.value, raw.value)
+})
+const chartError = computed(() => loadError.value || (mode.value === 'raw' ? rawError.value : ''))
 const title = computed(() => {
   const p = current.value
   if (!p) return ''
@@ -62,46 +72,92 @@ const hasInfo = computed(() => Boolean(current.value?.medicalHistory || current.
 let requestSeq = 0
 
 async function load() {
-  const p = current.value
-  if (!p) return
   const seq = ++requestSeq
-  const { from, to } = lastDays(days.value)
-  const today = new Date()
-  const prev = lastDays(days.value, new Date(today.getFullYear(), today.getMonth(), today.getDate() - days.value))
-  loading.value = true
+  ampm.value = null
+  previous.value = null
+  raw.value = null
+  readings.value = []
+  hasMore.value = false
+  loadError.value = ''
+  rawError.value = ''
+  rawLoading.value = false
+  loadingMore.value = false
+  guideOpen.value = false
+
+  const p = current.value
+  loading.value = Boolean(p)
+  if (!p) return
+
+  const date = today.value
+  const { from, to } = lastDays(days.value, date)
+  const prev = lastDays(days.value, new Date(date.getFullYear(), date.getMonth(), date.getDate() - days.value))
   try {
-    const [cur, before, rawTrend, list] = await Promise.all([
+    const [cur, before, list] = await Promise.all([
       api.trend(p.id, 'ampm', from, to),
       api.trend(p.id, 'ampm', prev.from, prev.to),
-      mode.value === 'raw' ? api.trend(p.id, 'raw', from, to) : Promise.resolve(null),
-      api.readings(p.id, { from, to, limit: listLimit.value }),
+      api.readings(p.id, { from, to, limit: PAGE_SIZE + 1 }),
     ])
-    // Ignore responses that were overtaken by a newer selection.
     if (seq !== requestSeq) return
     ampm.value = cur
     previous.value = before
-    raw.value = rawTrend
-    readings.value = list
+    readings.value = list.slice(0, PAGE_SIZE)
+    hasMore.value = list.length > PAGE_SIZE
   } catch (err) {
-    if (seq === requestSeq) showToast(describeError(err))
+    if (seq === requestSeq) loadError.value = describeError(err)
   } finally {
     if (seq === requestSeq) loading.value = false
   }
 }
 
-function showMore() {
-  listLimit.value += PAGE_SIZE
-  load()
+async function loadRaw() {
+  const p = current.value
+  const range = ampm.value
+  if (!p || !range?.summary.count || mode.value !== 'raw' || raw.value || rawLoading.value) return
+
+  const seq = requestSeq
+  rawLoading.value = true
+  rawError.value = ''
+  try {
+    const result = await api.trend(p.id, 'raw', range.from, range.to)
+    if (seq === requestSeq) raw.value = result
+  } catch (err) {
+    if (seq === requestSeq) rawError.value = describeError(err)
+  } finally {
+    if (seq === requestSeq) rawLoading.value = false
+  }
+}
+
+function retryChart() {
+  if (ampm.value) return loadRaw()
+  return load()
+}
+
+async function showMore() {
+  const p = current.value
+  const range = ampm.value
+  if (!p || !range || !hasMore.value || loadingMore.value) return
+
+  const seq = requestSeq
+  const { from, to } = range
+  loadingMore.value = true
+  try {
+    const list = await api.readings(p.id, { from, to, limit: PAGE_SIZE + 1, offset: readings.value.length })
+    if (seq !== requestSeq) return
+    readings.value.push(...list.slice(0, PAGE_SIZE))
+    hasMore.value = list.length > PAGE_SIZE
+  } catch (err) {
+    if (seq === requestSeq) showToast(describeError(err))
+  } finally {
+    if (seq === requestSeq) loadingMore.value = false
+  }
 }
 
 watch(days, (d) => {
   mode.value = defaultMode(d)
-  listLimit.value = PAGE_SIZE
+  localStorage.setItem(PREFS_KEY, JSON.stringify({ days: d }))
 })
-watch([() => current.value?.id, days, mode], load, { immediate: true })
-watch(days, () => {
-  localStorage.setItem(PREFS_KEY, JSON.stringify({ days: days.value }))
-})
+watch([() => current.value?.id, days, today], load, { immediate: true })
+watch([ampm, mode], loadRaw)
 </script>
 
 <template>
@@ -123,23 +179,29 @@ watch(days, () => {
     </section>
 
     <section class="card chart-card">
-      <template v-if="hasData && chart">
-        <div class="plot">
-          <BpChart :data="chart" show-pulse :summary="insight.join('')" />
-          <van-popover v-model:show="guideOpen" placement="bottom-end" theme="light" :offset="[0, 4]">
-            <p class="guide-text">{{ t.trend.reference }}</p>
-            <template #reference>
-              <button type="button" class="guide" :aria-expanded="guideOpen" :aria-label="t.trend.reference">
-                <span aria-hidden="true">i</span>
-              </button>
-            </template>
-          </van-popover>
-        </div>
-
-        <SegmentedControl v-model="mode" :options="modeOptions" :aria-label="t.trend.modeLabel" class="modes" />
-      </template>
-      <van-loading v-else-if="loading" class="empty" size="32px" vertical>{{ t.common.loading }}</van-loading>
+      <div v-if="hasData && chart" class="plot">
+        <BpChart :data="chart" show-pulse :summary="insight.join('')" />
+        <van-popover v-model:show="guideOpen" placement="bottom-end" theme="light" :offset="[0, 4]">
+          <p class="guide-text">{{ t.trend.reference }}</p>
+          <template #reference>
+            <button type="button" class="guide" :aria-expanded="guideOpen" :aria-label="t.trend.reference">
+              <span aria-hidden="true">i</span>
+            </button>
+          </template>
+        </van-popover>
+      </div>
+      <van-loading v-else-if="loading || (mode === 'raw' && rawLoading)" class="empty" size="32px" vertical>{{ t.common.loading }}</van-loading>
+      <van-empty v-else-if="chartError" image="error" :description="chartError">
+        <van-button round @click="retryChart">{{ t.common.retry }}</van-button>
+      </van-empty>
       <van-empty v-else image="search" :description="t.trend.empty" />
+      <SegmentedControl
+        v-if="hasData || loading || chartError"
+        v-model="mode"
+        :options="modeOptions"
+        :aria-label="t.trend.modeLabel"
+        class="modes"
+      />
     </section>
 
     <section v-if="hasInfo" class="card info">
@@ -155,13 +217,13 @@ watch(days, () => {
 
     <template v-if="readings.length">
       <h2 class="section-title">{{ t.trend.recent }}</h2>
-      <ReadingList :readings="readings" :can-write="current.canWrite" @changed="load" />
+      <ReadingList :key="current.id" :readings="readings" :can-write="current.canWrite" @changed="load" />
       <van-button
-        v-if="readings.length >= listLimit"
+        v-if="hasMore"
         class="show-more"
         block
         round
-        :loading="loading"
+        :loading="loadingMore"
         @click="showMore"
       >
         {{ t.trend.showMore(PAGE_SIZE) }}

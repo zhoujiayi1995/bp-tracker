@@ -88,10 +88,7 @@ func ValidateItems(items []Item) error {
 		if it.Systolic <= it.Diastolic {
 			return validate.Field(prefix+"systolic", "not_above_diastolic")
 		}
-		if it.Pulse == nil {
-			return validate.Field(prefix+"pulse", "required")
-		}
-		if *it.Pulse < minPulse || *it.Pulse > maxPulse {
+		if it.Pulse != nil && (*it.Pulse < minPulse || *it.Pulse > maxPulse) {
 			return validate.Field(prefix+"pulse", "range")
 		}
 	}

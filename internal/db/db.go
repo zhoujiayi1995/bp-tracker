@@ -95,20 +95,20 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	}
 
 	for _, m := range migrations {
-		var applied int
-		if err := db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, m.version).Scan(&applied); err != nil {
-			return fmt.Errorf("check migration %d: %w", m.version, err)
-		}
-		if applied > 0 {
-			continue
-		}
-
 		body, err := migrationFS.ReadFile("migrations/" + m.name)
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", m.name, err)
 		}
 		err = WithTx(ctx, db, func(tx *sql.Tx) error {
+			var applied int
+			if err := tx.QueryRowContext(ctx,
+				`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, m.version).Scan(&applied); err != nil {
+				return fmt.Errorf("check migration %d: %w", m.version, err)
+			}
+			if applied > 0 {
+				return nil
+			}
+
 			if _, err := tx.ExecContext(ctx, string(body)); err != nil {
 				return err
 			}
