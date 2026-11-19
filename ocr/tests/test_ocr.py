@@ -108,6 +108,10 @@ class SyntheticTests(unittest.TestCase):
 
 
 class PhotoTests(unittest.TestCase):
+    def setUp(self):
+        if not PHOTOS.is_dir() or not any(PHOTOS.glob("*.jpg")):
+            self.skipTest("ocr-test-photos is kept locally and is not in the repository")
+
     def test_all_photos(self):
         expected = json.loads((ROOT / "testdata" / "expected.json").read_text())
         self.assertEqual(len(expected), 26)

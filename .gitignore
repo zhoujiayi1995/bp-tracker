@@ -9,5 +9,6 @@ web/dist/*
 !web/dist/.gitkeep
 
 .DS_Store
+/ocr-test-photos/
 ocr/.venv/
 **/__pycache__/

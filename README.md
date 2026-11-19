@@ -39,7 +39,6 @@ internal/reading    readings, averaging, am/pm/evening trend buckets
 internal/ocr        runs `python -m bp_ocr` on one photo
 internal/httpapi    HTTP handlers, middleware, SPA serving
 ocr/                HEM-1026 screen reader, Python package `bp_ocr`
-ocr-test-photos/    real monitor photos used by the OCR acceptance tests
 web/                Vue 3 + Vant frontend (built into web/dist and embedded)
 ```
 
@@ -156,7 +155,7 @@ make test        # = go test ./... && (cd web && npm run test)
 - Go 单元测试覆盖：权限矩阵、平均值计算与输入校验、上午/下午分桶、日期范围、会话续期、登录限流、家庭的加入与退出、档案的级联删除。
 - `internal/httpapi/api_test.go` 是基于 `httptest` 的端到端测试，覆盖：注册、建立和加入家庭、代管成员、录入记录、各种越权写入返回 403、退出家庭后失去访问权限、CSRF 防护、登录限流、改密码后其他设备下线。
 - 前端用 Vitest 测试血压分级、平均值、异常值判断和自动跳格逻辑。
-- 拍照识别的验收在 `ocr/` 下单独运行：`cd ocr && .venv/bin/python -m unittest discover -s tests -v`。实拍用例读取 `ocr-test-photos/`。
+- 拍照识别的验收在 `ocr/` 下单独运行：`cd ocr && .venv/bin/python -m unittest discover -s tests -v`。实拍照片放在本机的 `ocr-test-photos/`，不进入仓库；没有这个目录时，实拍用例会跳过。
 
 ## 安全设计要点
 
